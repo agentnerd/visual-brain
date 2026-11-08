@@ -4,6 +4,7 @@ import { onInternalDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtim
 const ENDPOINT = process.env.VISUAL_BRAIN_ENDPOINT || 'http://127.0.0.1:18896';
 const TOKEN = process.env.VISUAL_BRAIN_TOKEN;
 const MAX_ACTIVE = 512;
+const ACTIVE_TTL_MS = { model: 10 * 60_000, tools: 20 * 60_000, agents: 15 * 60_000, skills: 2 * 60_000, planning: 2 * 60_000 };
 const EVENT_TYPES = [
   'model.call.started', 'model.call.completed', 'model.call.error',
   'tool.execution.started', 'tool.execution.completed', 'tool.execution.error', 'tool.execution.blocked',
@@ -22,7 +23,7 @@ export default definePluginEntry({
       model: 'model.call', tools: 'tool.execution', skills: 'skill.use',
       agents: 'agent.run', planning: 'agent.phase',
     };
-    const inFlight = new Map(Object.keys(categorySource).map((category) => [category, new Set()]));
+    const inFlight = new Map(Object.keys(categorySource).map((category) => [category, new Map()]));
     let sequence = 0;
     let pending = 0;
 
@@ -44,13 +45,14 @@ export default definePluginEntry({
     function start(category, key) {
       if (!key || active.has(key)) return;
       if (active.size >= MAX_ACTIVE) return;
-      active.set(key, category);
-      inFlight.get(category).add(key);
+      const now = Date.now();
+      active.set(key, { category, lastSeen: now });
+      inFlight.get(category).set(key, now);
       event(category, 'start');
     }
 
     function end(category, key) {
-      if (key && active.get(key) === category) {
+      if (key && active.get(key)?.category === category) {
         active.delete(key);
         inFlight.get(category).delete(key);
         event(category, 'end');
@@ -59,7 +61,17 @@ export default definePluginEntry({
       }
     }
 
-    function pulse(category) { event(category, 'pulse'); }
+    function pulse(category, refreshActive = false) {
+      event(category, 'pulse');
+      if (refreshActive) {
+        const now = Date.now();
+        for (const [key, state] of active) {
+          if (state.category !== category) continue;
+          state.lastSeen = now;
+          inFlight.get(category).set(key, now);
+        }
+      }
+    }
 
     const unsubscribe = onInternalDiagnosticEvent((evt) => {
       if (!evt || typeof evt.type !== 'string') return;
@@ -103,7 +115,7 @@ export default definePluginEntry({
           break;
         case 'run.progress':
         case 'run.execution_phase':
-          pulse('agents');
+          pulse('agents', true);
           break;
         case 'message.processed':
         case 'message.delivery.started':
@@ -119,6 +131,12 @@ export default definePluginEntry({
     const heartbeat = setInterval(() => {
       if (pending < 64) {
         post('/v1/heartbeat', { event: 'bridge-heartbeat' });
+        const now = Date.now();
+        for (const [key, state] of active) {
+          if (now - state.lastSeen <= ACTIVE_TTL_MS[state.category]) continue;
+          active.delete(key);
+          inFlight.get(state.category).delete(key);
+        }
         for (const [category, keys] of inFlight) {
           post('/v1/event', { category, action: 'heartbeat', source: categorySource[category], active: keys.size });
         }

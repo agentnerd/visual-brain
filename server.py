@@ -19,6 +19,13 @@ GENAI_OPERATIONS = {
     'invoke_agent': ('agents', 'agent.run'),
     'create_agent': ('agents', 'agent.run'),
 }
+OPENCLAW_SPANS = {
+    'openclaw.model.call': ('model', 'model.call'),
+    'openclaw.model.usage': ('model', 'model.call'),
+    'openclaw.tool.execution': ('tools', 'tool.execution'),
+    'openclaw.run': ('agents', 'agent.run'),
+    'openclaw.harness.run': ('agents', 'agent.run'),
+}
 
 
 class Brain:
@@ -86,7 +93,7 @@ def record_otlp_traces(request, brain):
                 operation = attributes.get('gen_ai.operation.name', '').strip().lower()
                 if not operation:
                     operation = span.name.strip().split(' ', 1)[0].lower()
-                mapped = GENAI_OPERATIONS.get(operation)
+                mapped = GENAI_OPERATIONS.get(operation) or OPENCLAW_SPANS.get(span.name.strip().lower())
                 if mapped:
                     brain.observe(mapped[0], mapped[1], 'pulse')
                     accepted += 1

@@ -6,13 +6,12 @@ There is no Visual Brain-specific agent SDK requirement. If an agent framework a
 
 ## Local install
 
-Requires Python 3.10+. Core dashboard has no dependencies. To accept standard OTLP traces, install the optional protocol package:
+Requires Python 3.10+. The one-command launcher creates an isolated virtual environment, installs the OTLP protocol dependency, then starts the local display:
 
 ```sh
 git clone https://github.com/agentnerd/visual-brain.git
 cd visual-brain
-python3 -m pip install -r requirements-otel.txt
-python3 server.py
+./scripts/run-local.sh
 ```
 
 Open <http://127.0.0.1:18896>. Configure your agent's OpenTelemetry exporter:
@@ -35,6 +34,39 @@ The UI updates as telemetry arrives. Most OpenTelemetry tracing SDKs export a sp
 - **Telegram:** host the dashboard at an authenticated HTTPS origin and open it as a Telegram Mini App/Web App. A chat message cannot contain an arbitrary interactive widget. This repo provides the web display, not a Telegram bot, hosting account, or public tunnel.
 - **Any agent/harness:** use its existing OpenTelemetry instrumentation/exporter. For runtimes with lifecycle hooks but no OTel export, the optional event API below is a minimal fallback; there is no need to adopt it when OTLP is available.
 - **OpenClaw:** an optional adapter is in [`adapters/openclaw/`](adapters/openclaw/). It observes OpenClaw Gateway diagnostic events, including live starts/ends where emitted. Runtime diagnostic coverage/API can vary by OpenClaw version.
+
+### OpenClaw Gateway install
+
+For standard OTLP from OpenClaw, install its official exporter and point traces at this local receiver:
+
+```sh
+openclaw plugins install clawhub:@openclaw/diagnostics-otel
+```
+
+Merge these entries into the existing OpenClaw config (preserve other plugin entries and diagnostic settings):
+
+```json5
+{
+  plugins: {
+    allow: ["diagnostics-otel"],
+    entries: { "diagnostics-otel": { enabled: true } }
+  },
+  diagnostics: {
+    enabled: true,
+    otel: {
+      enabled: true,
+      endpoint: "http://127.0.0.1:18896",
+      protocol: "http/protobuf",
+      traces: true,
+      metrics: false,
+      logs: false,
+      sampleRate: 1.0
+    }
+  }
+}
+```
+
+The optional `adapters/openclaw/` plugin reports in-flight starts/completions for regions where Gateway diagnostics expose them; OTLP spans usually arrive at completion and show as **RECENT**. Do not enable both if duplicate event counts are undesirable.
 
 ## Optional event API
 
