@@ -10,7 +10,6 @@ const EVENT_TYPES = [
   'tool.execution.started', 'tool.execution.completed', 'tool.execution.error', 'tool.execution.blocked',
   'skill.used', 'run.started', 'run.completed', 'run.progress', 'run.execution_phase',
   'harness.run.started', 'harness.run.completed', 'harness.run.error',
-  'message.processed', 'message.delivery.started', 'message.delivery.completed', 'message.delivery.error',
 ];
 
 export default definePluginEntry({
@@ -20,8 +19,9 @@ export default definePluginEntry({
     if (api.registrationMode !== 'full') return;
     const active = new Map();
     const categorySource = {
-      model: 'model.call', tools: 'tool.execution', skills: 'skill.use',
-      agents: 'agent.run', planning: 'agent.phase',
+      model: 'gen_ai.client.inference', tools: 'gen_ai.execute_tool',
+      skills: 'gen_ai.execute_tool.load_skill', agents: 'gen_ai.invoke_agent.internal',
+      planning: 'gen_ai.plan.internal',
     };
     const inFlight = new Map(Object.keys(categorySource).map((category) => [category, new Map()]));
     let sequence = 0;
@@ -38,8 +38,8 @@ export default definePluginEntry({
       }).catch(() => {}).finally(() => { pending--; });
     }
 
-    function event(category, action) {
-      post('/v1/event', { category, action, source: categorySource[category] });
+    function event(category, action, source = categorySource[category]) {
+      post('/v1/event', { category, action, source });
     }
 
     function start(category, key) {
@@ -102,7 +102,11 @@ export default definePluginEntry({
           pulse('tools');
           break;
         case 'skill.used':
-          pulse('skills');
+          if (evt.activation === 'read') {
+            event('skills', 'pulse', 'gen_ai.execute_tool.read_skill_resource');
+          } else {
+            event('tools', 'pulse');
+          }
           break;
         case 'run.started':
         case 'harness.run.started':
@@ -116,12 +120,6 @@ export default definePluginEntry({
         case 'run.progress':
         case 'run.execution_phase':
           pulse('agents', true);
-          break;
-        case 'message.processed':
-        case 'message.delivery.started':
-        case 'message.delivery.completed':
-        case 'message.delivery.error':
-          pulse('planning');
           break;
         default:
           break;

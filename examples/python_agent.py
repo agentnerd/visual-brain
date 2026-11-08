@@ -1,4 +1,4 @@
-"""Optional fallback emitter for runtimes without OpenTelemetry export/hooks."""
+"""Optional compatibility emitter mapping to GenAI convention span labels."""
 import json
 import os
 import urllib.request
@@ -31,5 +31,5 @@ def operation(category, source):
 
 
 if __name__ == '__main__':
-    with operation('model', 'model.call'):
+    with operation('model', 'gen_ai.client.inference'):
         print('Replace this block with your model invocation.')

@@ -9,22 +9,46 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CATEGORIES = ('model', 'tools', 'memory', 'skills', 'planning', 'agents')
-SOURCES = {'model': 'model.call', 'tools': 'tool.execution', 'memory': 'memory.access',
-           'skills': 'skill.use', 'planning': 'agent.phase', 'agents': 'agent.run'}
-GENAI_OPERATIONS = {
-    'chat': ('model', 'model.call'),
-    'text_completion': ('model', 'model.call'),
-    'embeddings': ('model', 'model.call'),
-    'execute_tool': ('tools', 'tool.execution'),
-    'invoke_agent': ('agents', 'agent.run'),
-    'create_agent': ('agents', 'agent.run'),
+SOURCES = {
+    'model': ('gen_ai.client.inference', 'gen_ai.client.embeddings', 'gen_ai.fetch_response.client'),
+    'tools': ('gen_ai.execute_tool',),
+    'memory': ('gen_ai.memory.client', 'gen_ai.retrieval'),
+    'skills': ('gen_ai.execute_tool.load_skill', 'gen_ai.execute_tool.read_skill_resource'),
+    'planning': ('gen_ai.plan.internal',),
+    'agents': ('gen_ai.invoke_agent.internal', 'gen_ai.client.invoke_agent', 'gen_ai.create_agent.client'),
 }
-OPENCLAW_SPANS = {
-    'openclaw.model.call': ('model', 'model.call'),
-    'openclaw.model.usage': ('model', 'model.call'),
-    'openclaw.tool.execution': ('tools', 'tool.execution'),
-    'openclaw.run': ('agents', 'agent.run'),
-    'openclaw.harness.run': ('agents', 'agent.run'),
+GENAI_OPERATIONS = {
+    'chat': ('model', 'gen_ai.client.inference'),
+    'generate_content': ('model', 'gen_ai.client.inference'),
+    'realtime_inference': ('model', 'gen_ai.client.inference'),
+    'text_completion': ('model', 'gen_ai.client.inference'),
+    'embeddings': ('model', 'gen_ai.client.embeddings'),
+    'fetch_response': ('model', 'gen_ai.fetch_response.client'),
+    'execute_tool': ('tools', 'gen_ai.execute_tool'),
+    'retrieval': ('memory', 'gen_ai.retrieval'),
+    'create_memory_store': ('memory', 'gen_ai.memory.client'),
+    'search_memory': ('memory', 'gen_ai.memory.client'),
+    'create_memory': ('memory', 'gen_ai.memory.client'),
+    'update_memory': ('memory', 'gen_ai.memory.client'),
+    'upsert_memory': ('memory', 'gen_ai.memory.client'),
+    'delete_memory': ('memory', 'gen_ai.memory.client'),
+    'delete_memory_store': ('memory', 'gen_ai.memory.client'),
+    'plan': ('planning', 'gen_ai.plan.internal'),
+    'invoke_agent': ('agents', 'gen_ai.invoke_agent.internal'),
+    'create_agent': ('agents', 'gen_ai.create_agent.client'),
+}
+GENAI_CONVENTIONS = {
+    'name': 'OpenTelemetry GenAI semantic conventions',
+    'status': 'Development',
+    'url': 'https://github.com/open-telemetry/semantic-conventions-genai',
+    'regions': {
+        'model': ['gen_ai.client.inference', 'gen_ai.client.embeddings', 'gen_ai.fetch_response.client'],
+        'tools': ['gen_ai.execute_tool'],
+        'memory': ['gen_ai.memory.client', 'gen_ai.retrieval'],
+        'skills': ['gen_ai.execute_tool.load_skill', 'gen_ai.execute_tool.read_skill_resource'],
+        'planning': ['gen_ai.plan.internal'],
+        'agents': ['gen_ai.invoke_agent.internal', 'gen_ai.client.invoke_agent', 'gen_ai.create_agent.client'],
+    },
 }
 
 
@@ -78,22 +102,31 @@ class Brain:
                 } for category in CATEGORIES},
                 'events': list(self.events),
                 'bridge': 'CONNECTED' if now - self.bridge_seen < 10 else 'DISCONNECTED',
+                'conventions': GENAI_CONVENTIONS,
                 'scope': 'Observed lifecycle metadata only; private content is not collected.',
             }
 
 
 def record_otlp_traces(request, brain):
-    """Project only allowlisted OpenTelemetry GenAI operation names into display state."""
+    """Project only allowlisted OpenTelemetry GenAI semantic-convention spans."""
     accepted = 0
     for resource in request.resource_spans:
         for scope in resource.scope_spans:
             for span in scope.spans:
-                attributes = {item.key: item.value.string_value for item in span.attributes
-                              if item.key == 'gen_ai.operation.name' and item.value.WhichOneof('value') == 'string_value'}
-                operation = attributes.get('gen_ai.operation.name', '').strip().lower()
-                if not operation:
-                    operation = span.name.strip().split(' ', 1)[0].lower()
-                mapped = GENAI_OPERATIONS.get(operation) or OPENCLAW_SPANS.get(span.name.strip().lower())
+                operation = ''
+                has_skill_name = False
+                has_skill_resource = False
+                for item in span.attributes:
+                    if item.key == 'gen_ai.operation.name' and item.value.WhichOneof('value') == 'string_value':
+                        operation = item.value.string_value.strip().lower()
+                    elif item.key == 'gen_ai.skill.name':
+                        has_skill_name = True
+                    elif item.key == 'gen_ai.skill.resource.name':
+                        has_skill_resource = True
+                mapped = GENAI_OPERATIONS.get(operation)
+                if operation == 'execute_tool' and (has_skill_name or has_skill_resource):
+                    mapped = ('skills', 'gen_ai.execute_tool.read_skill_resource' if has_skill_resource
+                              else 'gen_ai.execute_tool.load_skill')
                 if mapped:
                     brain.observe(mapped[0], mapped[1], 'pulse')
                     accepted += 1
@@ -179,7 +212,7 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
                 if not isinstance(payload, dict) or not set(payload) <= {'category', 'action', 'source', 'active'} or not {'category', 'action', 'source'} <= set(payload):
                     raise ValueError()
                 category, action, source = payload['category'], payload['action'], payload['source']
-                if category not in CATEGORIES or source != SOURCES[category] or action not in ('start', 'end', 'pulse', 'heartbeat'):
+                if category not in CATEGORIES or source not in SOURCES[category] or action not in ('start', 'end', 'pulse', 'heartbeat'):
                     raise ValueError()
                 if action == 'heartbeat':
                     if set(payload) != {'category', 'action', 'source', 'active'} or type(payload['active']) is not int or not 0 <= payload['active'] <= 512:

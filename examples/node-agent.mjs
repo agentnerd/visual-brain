@@ -1,4 +1,5 @@
-// Optional fallback emitter for runtimes without OpenTelemetry export/hooks.
+// Optional compatibility emitter for runtimes without OpenTelemetry export/hooks.
+// `source` must be a standard GenAI semantic-convention span label allowed for `category`.
 // Never attach prompts, results, or runtime IDs.
 const endpoint = (process.env.VISUAL_BRAIN_ENDPOINT || 'http://127.0.0.1:18896').replace(/\/$/, '');
 

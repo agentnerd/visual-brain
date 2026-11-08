@@ -28,6 +28,10 @@
     .event-panel { margin-top: 12px; padding: 16px 18px; border: 1px solid #35403d; border-radius: 12px; }
     .event-panel b { display: block; margin-bottom: 8px; }
     #activity { max-height: 220px; overflow: auto; }
+    #standards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; margin: 0; padding-left: 18px; color: #a6b3b0; line-height: 1.7; }
+    #standards li { padding-left: 2px; }
+    #standards li b { display: inline; margin-right: 7px; color: #e9e8df; }
+    #standards code { color: #c4d4c5; overflow-wrap: anywhere; font-size: 11px; }
     #connection { font: 12px ui-monospace, monospace; }
     footer { margin-top: 20px; color: #97aaa2; font-size: 12px; line-height: 1.6; }
     @keyframes pulse { 50% { filter: drop-shadow(0 0 9px #a5d6b0); } }
@@ -37,6 +41,7 @@
       .region-name { font-size: 22px; }
       .region-state { font-size: 17px; }
       .event-panel { padding: 14px; }
+      #standards { grid-template-columns: 1fr; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   </style>
@@ -49,7 +54,7 @@
   <div class="stage">
     <svg viewBox="0 0 600 380" role="img" aria-labelledby="brain-title brain-desc">
       <title id="brain-title">Live agent activity brain</title>
-      <desc id="brain-desc">Six labeled regions show their latest observable runtime state.</desc>
+      <desc id="brain-desc">Six labeled regions group operations from the OpenTelemetry GenAI semantic conventions.</desc>
       <g transform="translate(75,10)">
         <path id="model" d="M220 32C165 0 75 35 70 105L205 145 220 120Z"/>
         <path id="tools" d="M70 110C0 155 20 230 75 250L205 205 205 150Z"/>
@@ -63,14 +68,14 @@
         <g id="label-tools" class="brain-region UNKNOWN" role="group" aria-label="Tool execution: unknown">
           <text class="region-name" x="135" y="174">TOOLS</text><text class="region-state" x="135" y="198">UNKNOWN</text>
         </g>
-        <g id="label-memory" class="brain-region UNKNOWN" role="group" aria-label="Memory retrieval: unknown">
+        <g id="label-memory" class="brain-region UNKNOWN" role="group" aria-label="Memory operations: unknown">
           <text class="region-name" x="148" y="280">MEMORY</text><text class="region-state" x="148" y="304">UNKNOWN</text>
         </g>
         <g id="label-skills" class="brain-region UNKNOWN" role="group" aria-label="Skill usage: unknown">
           <text class="region-name" x="305" y="84">SKILLS</text><text class="region-state" x="305" y="108">UNKNOWN</text>
         </g>
-        <g id="label-planning" class="brain-region UNKNOWN" role="group" aria-label="Gateway message flow: unknown">
-          <text class="region-name" x="340" y="174">MESSAGES</text><text class="region-state" x="340" y="198">UNKNOWN</text>
+        <g id="label-planning" class="brain-region UNKNOWN" role="group" aria-label="Agent planning: unknown">
+          <text class="region-name" x="340" y="174">PLAN</text><text class="region-state" x="340" y="198">UNKNOWN</text>
         </g>
         <g id="label-agents" class="brain-region UNKNOWN" role="group" aria-label="Agent and harness lifecycle: unknown">
           <text class="region-name" x="300" y="280">AGENTS</text><text class="region-state" x="300" y="304">UNKNOWN</text>
@@ -79,11 +84,35 @@
     </svg>
   </div>
   <section class="event-panel"><b>Recent runtime events</b><div id="activity" aria-live="polite">Waiting for Gateway telemetry…</div></section>
-  <footer>ACTIVE = an in-flight operation was reported · RECENT = telemetry arrived recently, but does not prove work remains active · INACTIVE = observed before, now quiet · UNKNOWN = no coverage observed.<br>Each runtime reports only events it can actually observe. Uninstrumented regions stay UNKNOWN.</footer>
+  <section class="event-panel" aria-labelledby="mapping-title">
+    <b id="mapping-title">OpenTelemetry GenAI mapping · Development</b>
+    <ul id="standards">
+      <li><b>MODEL</b><code>gen_ai.client.inference</code>, <code>gen_ai.client.embeddings</code>, <code>gen_ai.fetch_response.client</code></li>
+      <li><b>TOOLS</b><code>gen_ai.execute_tool</code></li>
+      <li><b>MEMORY</b><code>gen_ai.memory.client</code>, <code>gen_ai.retrieval</code></li>
+      <li><b>SKILLS</b><code>gen_ai.execute_tool</code> with <code>gen_ai.skill.name</code></li>
+      <li><b>PLAN</b><code>gen_ai.plan.internal</code></li>
+      <li><b>AGENTS</b><code>gen_ai.invoke_agent.internal</code>, <code>gen_ai.client.invoke_agent</code>, <code>gen_ai.create_agent.client</code></li>
+    </ul>
+  </section>
+  <footer>ACTIVE = an in-flight operation was reported · RECENT = telemetry arrived recently, but does not prove work remains active · INACTIVE = observed before, now quiet · UNKNOWN = no matching standard span observed.<br>Every region is a Visual Brain grouping of OpenTelemetry GenAI semantic conventions; the current GenAI conventions are marked Development. No region is inferred from unrelated message flow.</footer>
 </main>
 <script>
-const labels={model:'Model calls',tools:'Tool execution',memory:'Memory retrieval',skills:'Skill usage',planning:'Gateway message flow',agents:'Agent / harness lifecycle'};
-const sourceLabels={'model.call':'Model call','tool.execution':'Tool execution','memory.access':'Memory access','skill.use':'Skill use','agent.phase':'Agent phase','agent.run':'Agent lifecycle'};
+const labels={model:'Model inference',tools:'Tool execution',memory:'Memory and retrieval',skills:'Skill tool execution',planning:'Agent planning',agents:'Agent invocation'};
+const sourceLabels={
+  'gen_ai.client.inference':'GenAI inference',
+  'gen_ai.client.embeddings':'GenAI embeddings',
+  'gen_ai.fetch_response.client':'GenAI response fetch',
+  'gen_ai.execute_tool':'GenAI tool execution',
+  'gen_ai.memory.client':'GenAI memory operation',
+  'gen_ai.retrieval':'GenAI retrieval',
+  'gen_ai.execute_tool.load_skill':'GenAI skill load',
+  'gen_ai.execute_tool.read_skill_resource':'GenAI skill resource read',
+  'gen_ai.plan.internal':'GenAI plan',
+  'gen_ai.invoke_agent.internal':'GenAI in-process agent',
+  'gen_ai.client.invoke_agent':'GenAI remote agent invocation',
+  'gen_ai.create_agent.client':'GenAI agent creation'
+};
 function render(data){
   try {
     document.querySelector('#connection').textContent=data.bridge==='CONNECTED'?'● TELEMETRY CONNECTED':'○ TELEMETRY DISCONNECTED';
