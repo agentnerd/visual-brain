@@ -50,6 +50,11 @@ GENAI_CONVENTIONS = {
         'agents': ['gen_ai.invoke_agent.internal', 'gen_ai.client.invoke_agent', 'gen_ai.create_agent.client'],
     },
 }
+LEGACY_ADAPTER_SOURCES = {
+    ('model', 'model.call'): 'gen_ai.client.inference',
+    ('tools', 'tool.execution'): 'gen_ai.execute_tool',
+    ('agents', 'agent.run'): 'gen_ai.invoke_agent.internal',
+}
 
 
 class Brain:
@@ -212,7 +217,10 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
                 if not isinstance(payload, dict) or not set(payload) <= {'category', 'action', 'source', 'active'} or not {'category', 'action', 'source'} <= set(payload):
                     raise ValueError()
                 category, action, source = payload['category'], payload['action'], payload['source']
-                if category not in CATEGORIES or source not in SOURCES[category] or action not in ('start', 'end', 'pulse', 'heartbeat'):
+                if category not in CATEGORIES or action not in ('start', 'end', 'pulse', 'heartbeat'):
+                    raise ValueError()
+                source = LEGACY_ADAPTER_SOURCES.get((category, source), source)
+                if source not in SOURCES[category]:
                     raise ValueError()
                 if action == 'heartbeat':
                     if set(payload) != {'category', 'action', 'source', 'active'} or type(payload['active']) is not int or not 0 <= payload['active'] <= 512:

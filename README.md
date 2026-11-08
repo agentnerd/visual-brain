@@ -81,7 +81,7 @@ The optional `adapters/openclaw/` plugin translates supported Gateway lifecycle 
 
 ## Optional event API
 
-`POST /v1/event` is an optional Visual Brain compatibility envelope, not an OpenTelemetry endpoint. It accepts only fixed region/action/source combinations mapped to GenAI semantic conventions:
+`POST /v1/event` is an optional Visual Brain compatibility envelope, not an OpenTelemetry endpoint. It accepts only fixed region/action/source combinations mapped to GenAI semantic conventions. For upgrade continuity, the bundled receiver also normalizes the previous OpenClaw adapter's model/tool/agent labels to their standard equivalents; it deliberately rejects its old generic message-to-planning label. New adapters should send the standard labels below:
 
 ```json
 {"category":"tools","action":"start","source":"gen_ai.execute_tool"}
