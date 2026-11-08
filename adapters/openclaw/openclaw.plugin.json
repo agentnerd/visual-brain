@@ -1,0 +1,12 @@
+{
+  "id": "visual-brain-telemetry",
+  "name": "Visual Brain Telemetry",
+  "description": "Content-free Gateway-wide runtime lifecycle events for the local Visual Brain display.",
+  "version": "1.0.0",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

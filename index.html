@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Visual Brain · Agent Observatory</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: clamp(20px, 5vw, 64px); background: #111719; color: #e9e8df; font: 15px system-ui, sans-serif; }
+    main { max-width: 1000px; margin: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; }
+    header small { color: #a8b9b3; letter-spacing: .18em; }
+    h1 { margin: 22px 0 8px; font-size: clamp(32px, 5vw, 56px); font-weight: 450; letter-spacing: -.05em; }
+    p { color: #a6b3b0; line-height: 1.6; }
+    .stage { background: radial-gradient(ellipse, #283635 0%, transparent 70%); }
+    svg { display: block; width: 100%; height: auto; max-height: min(60vw, 460px); overflow: visible; }
+    path { fill: #263533; stroke: #83938b; stroke-width: 1.5; stroke-dasharray: 3 4; transition: fill .25s, stroke .25s; }
+    path.ACTIVE { fill: #b4d9b6; stroke: #e3ffe7; stroke-dasharray: none; animation: pulse 1.4s infinite; }
+    path.INACTIVE { fill: #334d46; stroke-dasharray: none; }
+    path.UNKNOWN { fill: #263533; }
+    .brain-region { fill: #e9eee8; text-anchor: middle; pointer-events: none; }
+    .brain-region.ACTIVE { fill: #203127; }
+    .brain-region.UNKNOWN { fill: #c2cdc7; }
+    .region-name { font: 700 21px/1 system-ui, sans-serif; letter-spacing: .035em; }
+    .region-state { font: 600 16px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.035em; }
+    .event-panel { margin-top: 12px; padding: 16px 18px; border: 1px solid #35403d; border-radius: 12px; }
+    .event-panel b { display: block; margin-bottom: 8px; }
+    #activity { max-height: 220px; overflow: auto; }
+    #connection { font: 12px ui-monospace, monospace; }
+    footer { margin-top: 20px; color: #97aaa2; font-size: 12px; line-height: 1.6; }
+    @keyframes pulse { 50% { filter: drop-shadow(0 0 9px #a5d6b0); } }
+    @media (max-width: 600px) {
+      header { align-items: flex-start; gap: 8px; flex-direction: column; }
+      svg { max-height: none; }
+      .region-name { font-size: 22px; }
+      .region-state { font-size: 17px; }
+      .event-panel { padding: 14px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><small>AGENT OBSERVATORY</small><span id="connection">CONNECTING</span></header>
+  <h1>A mind, in motion.</h1>
+  <p>Live, observed runtime activity. No prompts, reasoning, or tool contents.</p>
+  <div class="stage">
+    <svg viewBox="0 0 600 380" role="img" aria-labelledby="brain-title brain-desc">
+      <title id="brain-title">Live agent activity brain</title>
+      <desc id="brain-desc">Six labeled regions show their latest observable runtime state.</desc>
+      <g transform="translate(75,10)">
+        <path id="model" d="M220 32C165 0 75 35 70 105L205 145 220 120Z"/>
+        <path id="tools" d="M70 110C0 155 20 230 75 250L205 205 205 150Z"/>
+        <path id="memory" d="M78 255C100 330 190 350 220 310L220 225 205 210Z"/>
+        <path id="skills" d="M230 32C285 0 375 35 380 105L245 145 230 120Z"/>
+        <path id="planning" d="M380 110C450 155 430 230 375 250L245 205 245 150Z"/>
+        <path id="agents" d="M372 255C350 330 260 350 230 310L230 225 245 210Z"/>
+        <g id="label-model" class="brain-region UNKNOWN" role="group" aria-label="Model calls: unknown">
+          <text class="region-name" x="145" y="84">MODEL</text><text class="region-state" x="145" y="108">UNKNOWN</text>
+        </g>
+        <g id="label-tools" class="brain-region UNKNOWN" role="group" aria-label="Tool execution: unknown">
+          <text class="region-name" x="135" y="174">TOOLS</text><text class="region-state" x="135" y="198">UNKNOWN</text>
+        </g>
+        <g id="label-memory" class="brain-region UNKNOWN" role="group" aria-label="Memory retrieval: unknown">
+          <text class="region-name" x="148" y="280">MEMORY</text><text class="region-state" x="148" y="304">UNKNOWN</text>
+        </g>
+        <g id="label-skills" class="brain-region UNKNOWN" role="group" aria-label="Skill usage: unknown">
+          <text class="region-name" x="305" y="84">SKILLS</text><text class="region-state" x="305" y="108">UNKNOWN</text>
+        </g>
+        <g id="label-planning" class="brain-region UNKNOWN" role="group" aria-label="Gateway message flow: unknown">
+          <text class="region-name" x="340" y="174">MESSAGES</text><text class="region-state" x="340" y="198">UNKNOWN</text>
+        </g>
+        <g id="label-agents" class="brain-region UNKNOWN" role="group" aria-label="Agent and harness lifecycle: unknown">
+          <text class="region-name" x="300" y="280">AGENTS</text><text class="region-state" x="300" y="304">UNKNOWN</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+  <section class="event-panel"><b>Recent runtime events</b><div id="activity" aria-live="polite">Waiting for Gateway telemetry…</div></section>
+  <footer>ACTIVE = work currently in progress · INACTIVE = a previous event is now quiet · UNKNOWN = no coverage observed.<br>Each runtime adapter reports only the lifecycle events it can actually observe. Uninstrumented regions stay UNKNOWN.</footer>
+</main>
+<script>
+const labels={model:'Model calls',tools:'Tool execution',memory:'Memory retrieval',skills:'Skill usage',planning:'Gateway message flow',agents:'Agent / harness lifecycle'};
+const sourceLabels={'model.call':'Model call','tool.execution':'Tool execution','memory.access':'Memory access','skill.use':'Skill use','agent.phase':'Agent phase','agent.run':'Agent lifecycle'};
+function render(data){
+  try {
+    document.querySelector('#connection').textContent=data.bridge==='CONNECTED'?'● TELEMETRY CONNECTED':'○ TELEMETRY DISCONNECTED';
+    for(const [key,value] of Object.entries(data.regions)){
+      document.getElementById(key).setAttribute('class',value.state);
+      const group=document.getElementById(`label-${key}`);
+      group.setAttribute('class',`brain-region ${value.state}`);
+      const detail=value.active?`ACTIVE · ${value.active}`:value.state;
+      group.querySelector('.region-state').textContent=detail;
+      group.setAttribute('aria-label',`${labels[key]}: ${value.state}; ${value.active} active; ${value.count} events.`);
+      group.querySelector('.region-name').setAttribute('title',`${labels[key]} · ${value.count} events`);
+    }
+    const events=[...data.events].reverse().slice(0,10);
+    const activity=document.querySelector('#activity');
+    activity.replaceChildren(...(events.length?events.map(event=>{
+      const row=document.createElement('div');
+      row.style.cssText='padding:5px 0;color:#a6b3b0;font:12px ui-monospace,monospace';
+      row.textContent=new Date(event.at*1000).toLocaleTimeString()+' · '+(sourceLabels[event.source]||event.source)+' '+event.action+' · '+labels[event.category];
+      return row;
+    }):[Object.assign(document.createElement('div'),{textContent:'Waiting for the first observed event…'})]));
+  } catch {
+    document.querySelector('#connection').textContent='DISPLAY DISCONNECTED';
+    document.querySelectorAll('svg path').forEach(path=>path.setAttribute('class','UNKNOWN'));
+    document.querySelectorAll('.brain-region').forEach(group=>{
+      group.setAttribute('class','brain-region UNKNOWN');
+      group.querySelector('.region-state').textContent='UNKNOWN';
+    });
+    document.querySelector('#activity').textContent='Connection lost. Coverage unknown.';
+  }
+}
+const stream=new EventSource('/events');
+stream.onmessage=(event)=>{try{render(JSON.parse(event.data))}catch{}};
+stream.onerror=()=>{document.querySelector('#connection').textContent='DISPLAY DISCONNECTED'};
+</script>
+</body>
+</html>
