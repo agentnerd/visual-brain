@@ -11,6 +11,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 CATEGORIES = ('model', 'tools', 'memory', 'skills', 'planning', 'agents')
 SOURCES = {'model': 'model.call', 'tools': 'tool.execution', 'memory': 'memory.access',
            'skills': 'skill.use', 'planning': 'agent.phase', 'agents': 'agent.run'}
+GENAI_OPERATIONS = {
+    'chat': ('model', 'model.call'),
+    'text_completion': ('model', 'model.call'),
+    'embeddings': ('model', 'model.call'),
+    'execute_tool': ('tools', 'tool.execution'),
+    'invoke_agent': ('agents', 'agent.run'),
+    'create_agent': ('agents', 'agent.run'),
+}
 
 
 class Brain:
@@ -58,13 +66,31 @@ class Brain:
                     self.active[category] = 0
             return {
                 'regions': {category: {
-                    'state': 'ACTIVE' if self.active[category] > 0 or now - self.last.get(category, 0) < 6 else ('INACTIVE' if category in self.last else 'UNKNOWN'),
+                    'state': 'ACTIVE' if self.active[category] > 0 else ('RECENT' if now - self.last.get(category, 0) < 6 else ('INACTIVE' if category in self.last else 'UNKNOWN')),
                     'count': self.counts[category], 'active': self.active[category],
                 } for category in CATEGORIES},
                 'events': list(self.events),
                 'bridge': 'CONNECTED' if now - self.bridge_seen < 10 else 'DISCONNECTED',
                 'scope': 'Observed lifecycle metadata only; private content is not collected.',
             }
+
+
+def record_otlp_traces(request, brain):
+    """Project only allowlisted OpenTelemetry GenAI operation names into display state."""
+    accepted = 0
+    for resource in request.resource_spans:
+        for scope in resource.scope_spans:
+            for span in scope.spans:
+                attributes = {item.key: item.value.string_value for item in span.attributes
+                              if item.key == 'gen_ai.operation.name' and item.value.WhichOneof('value') == 'string_value'}
+                operation = attributes.get('gen_ai.operation.name', '').strip().lower()
+                if not operation:
+                    operation = span.name.strip().split(' ', 1)[0].lower()
+                mapped = GENAI_OPERATIONS.get(operation)
+                if mapped:
+                    brain.observe(mapped[0], mapped[1], 'pulse')
+                    accepted += 1
+    return accepted
 
 
 def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
@@ -93,6 +119,32 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
             self.wfile.write(body)
 
         def do_POST(self):
+            if self.path == '/v1/traces':
+                if token and not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
+                    return self.respond(401, {'error': 'unauthorized'})
+                content_type = self.headers.get('Content-Type', '').split(';')[0].lower()
+                if content_type not in ('application/json', 'application/x-protobuf', 'application/protobuf'):
+                    return self.respond(415, {'error': 'OTLP/HTTP JSON or protobuf required'})
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 1_048_576:
+                        raise ValueError('request size invalid')
+                    body = self.rfile.read(length)
+                    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+                    from google.protobuf.message import DecodeError
+                    from google.protobuf.json_format import Parse, ParseError
+                    request = ExportTraceServiceRequest()
+                    if content_type == 'application/json':
+                        Parse(body.decode('utf-8'), request)
+                    else:
+                        request.ParseFromString(body)
+                    record_otlp_traces(request, brain)
+                    response = self._otlp_response(content_type)
+                    return self.respond(200, response, content_type)
+                except ImportError:
+                    return self.respond(503, {'error': 'Install OTLP support: pip install -r requirements-otel.txt'})
+                except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError, DecodeError, ParseError):
+                    return self.respond(400, {'error': 'invalid OTLP trace payload'})
             if self.path == '/v1/heartbeat':
                 if token and not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
                     return self.respond(401, {'error': 'unauthorized'})
@@ -131,6 +183,14 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
                 return self.respond(202, {})
             except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
                 return self.respond(400, {'error': 'invalid event'})
+
+        def _otlp_response(self, request_content_type):
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceResponse
+            response = ExportTraceServiceResponse()
+            if request_content_type == 'application/json':
+                from google.protobuf.json_format import MessageToJson
+                return MessageToJson(response).encode()
+            return response.SerializeToString()
 
         def do_GET(self):
             if self.path == '/state':

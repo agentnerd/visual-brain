@@ -1,81 +1,73 @@
 # Visual Brain
 
-**A harness-agnostic live activity display for AI agents.** Small agents, tools, and harness adapters send content-free lifecycle events to one receiver. The receiver exposes a web brain, JSON state, and Server-Sent Events (SSE), so other dashboards and widgets can share the same stream.
+**A harness-agnostic live activity display for AI agents.** Visual Brain accepts standard [OpenTelemetry OTLP/HTTP traces](https://opentelemetry.io/docs/specs/otlp/) and projects allowlisted GenAI operation spans into a responsive browser brain. The UI also exposes state as JSON and Server-Sent Events (SSE), so widgets and other dashboards can share it.
 
-It visualizes observable execution—not model thoughts. It never needs prompts, completions, tool arguments/results, or private reasoning.
+There is no Visual Brain-specific agent SDK requirement. If an agent framework already exports OpenTelemetry GenAI spans, point it at this receiver. Otherwise, use the framework's OTel instrumentation or the optional small custom event API. The display shows observed execution—not model thoughts—and never needs prompts, completions, tool arguments/results, or private reasoning.
 
-## Quick start
+## Local install
 
-Requires Python 3.10+; no third-party packages.
+Requires Python 3.10+. Core dashboard has no dependencies. To accept standard OTLP traces, install the optional protocol package:
 
 ```sh
+git clone https://github.com/agentnerd/visual-brain.git
+cd visual-brain
+python3 -m pip install -r requirements-otel.txt
 python3 server.py
 ```
 
-Open <http://127.0.0.1:18896>. Send an event from any runtime:
+Open <http://127.0.0.1:18896>. Configure your agent's OpenTelemetry exporter:
 
 ```sh
-curl -X POST http://127.0.0.1:18896/v1/event \
-  -H 'Content-Type: application/json' \
-  -d '{"category":"model","action":"start","source":"model.call"}'
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:18896
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-Finish the operation by sending the same event with `"action":"end"`. See [`examples/`](examples/) for Python and JavaScript emitters. Use only the fixed event fields and source names below; never put user data or runtime IDs in them.
+The receiver supports standard OTLP/HTTP protobuf and JSON on `/v1/traces`. Your framework/instrumentation must emit spans with the OpenTelemetry GenAI semantic-convention attribute `gen_ai.operation.name`. It maps common operations such as `chat`, `text_completion`, and `embeddings` to **MODEL**, `execute_tool` to **TOOLS**, and `invoke_agent` / `create_agent` to **AGENTS**. OTel GenAI conventions do not currently provide portable event coverage for every brain region; unobserved **MEMORY**, **SKILLS**, and **PLANNING** stay `UNKNOWN` rather than being guessed.
 
-## Portable event contract
+## Live timing limits
 
-`POST /v1/event` accepts a bounded JSON object:
+The UI updates as telemetry arrives. Most OpenTelemetry tracing SDKs export a span only after that operation finishes, so OTLP traces alone usually show completed work as **RECENT**, not continuously **ACTIVE** during a long call. **ACTIVE** requires an instrumentation/export path that reports in-flight lifecycle state. The optional event endpoint supports explicit start/end and heartbeats for runtimes that expose those hooks. Do not mistake a completed span or a quiet feed for current activity.
+
+## Displays and integrations
+
+- **Browser dashboard:** built in; responsive and updated over SSE.
+- **Other dashboards/widgets:** consume `GET /state` (snapshot JSON) or `GET /events` (SSE). Each SSE `data:` value is a complete state snapshot. Embed the dashboard as a same-origin iframe or create a native visualization.
+- **Telegram:** host the dashboard at an authenticated HTTPS origin and open it as a Telegram Mini App/Web App. A chat message cannot contain an arbitrary interactive widget. This repo provides the web display, not a Telegram bot, hosting account, or public tunnel.
+- **Any agent/harness:** use its existing OpenTelemetry instrumentation/exporter. For runtimes with lifecycle hooks but no OTel export, the optional event API below is a minimal fallback; there is no need to adopt it when OTLP is available.
+- **OpenClaw:** an optional adapter is in [`adapters/openclaw/`](adapters/openclaw/). It observes OpenClaw Gateway diagnostic events, including live starts/ends where emitted. Runtime diagnostic coverage/API can vary by OpenClaw version.
+
+## Optional event API
+
+`POST /v1/event` accepts a deliberately small, content-free JSON object:
 
 ```json
 {"category":"tools","action":"start","source":"tool.execution"}
 ```
 
-| Category | Allowed source | Typical lifecycle |
-|---|---|---|
-| `model` | `model.call` | `start`, `end`, `pulse` |
-| `tools` | `tool.execution` | `start`, `end`, `pulse` |
-| `memory` | `memory.access` | `pulse` |
-| `skills` | `skill.use` | `pulse` |
-| `planning` | `agent.phase` | `pulse` |
-| `agents` | `agent.run` | `start`, `end`, `pulse` |
+Send the same event with `"action":"end"` when it completes. Allowed category/source pairs are `model/model.call`, `tools/tool.execution`, `memory/memory.access`, `skills/skill.use`, `planning/agent.phase`, and `agents/agent.run`; allowed actions are `start`, `end`, `pulse`, and `heartbeat`. A heartbeat event may include integer `active` (0–512). `POST /v1/heartbeat` accepts `{"event":"bridge-heartbeat"}`. Extra fields are rejected. See [`examples/`](examples/) for tiny Python and JavaScript fallback emitters.
 
-`/v1/heartbeat` accepts `{"event":"bridge-heartbeat"}`. For long operations, `action:"heartbeat"` with an integer `active` count (0–512) keeps active state accurate without manufacturing event rows. The receiver rejects extra fields. Region states are `ACTIVE`, `INACTIVE`, or `UNKNOWN`; unknown means no event observed, not proof that no work happened.
+## Cloud / private deployment
 
-## Displays and integrations
-
-- **Browser dashboard:** built in; responsive and updated over SSE.
-- **Other dashboards/widgets:** consume `GET /state` (snapshot JSON) or `GET /events` (SSE). Each SSE `data:` value is a complete state snapshot. Embed the dashboard as a same-origin iframe or recreate the visualization with any frontend.
-- **Telegram:** host the dashboard at an authenticated HTTPS origin and open it as a Telegram Mini App/Web App. A chat message cannot contain an arbitrary interactive widget. This repo provides the web component endpoint, not a Telegram bot, hosting account, or public tunnel.
-- **Any agent/harness:** implement the small HTTP contract using a native hook, middleware, callback, or wrapper. Example emitters are dependency-free. Events may originate from different agents and languages and feed one collector.
-- **OpenClaw:** an optional observer is in [`adapters/openclaw/`](adapters/openclaw/). It uses OpenClaw's exported plugin SDK and runtime diagnostic stream; runtime diagnostic coverage/API can vary by OpenClaw version. This is one adapter, not a core requirement.
-
-## Local and cloud deployment
-
-Local loopback is the default and needs no credentials. For a private cloud/VPS, terminate TLS and enforce viewer authentication at a trusted reverse proxy. Bind the receiver remotely only with an ingest token:
+For a private cloud/VPS, terminate TLS and enforce viewer authentication at a trusted reverse proxy. Bind the receiver remotely only with an ingest token:
 
 ```sh
 export VISUAL_BRAIN_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 python3 server.py --host 0.0.0.0 --port 18896 --token "$VISUAL_BRAIN_TOKEN" --allow-remote
 ```
 
-Configure the same token as `Authorization: Bearer …` on agent POSTs. Keep viewer access behind SSO/OIDC or equivalent reverse-proxy auth; the ingest token is not a viewer login. Do not expose the receiver directly to the Internet: it does not terminate TLS, manage users, or provide tenant isolation. For Telegram Mini Apps, serve the UI and API from the authenticated HTTPS deployment and validate Telegram `initData` in your own trusted backend before granting a viewer session.
+Configure the same token in OTel exporter headers (for shell environments: `export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${VISUAL_BRAIN_TOKEN}"`) or as `Authorization: Bearer …` on fallback POSTs. Keep viewer access behind SSO/OIDC or equivalent proxy auth; the ingest token is not a viewer login. Do not expose the receiver directly to the Internet: it does not terminate TLS, manage users, or provide tenant isolation. For Telegram Mini Apps, serve UI and API from an authenticated HTTPS deployment and validate Telegram `initData` in a trusted backend before granting a viewer session.
 
 ## Privacy and limits
 
-- Event schema intentionally excludes content, names, IDs, provider/model labels, and arbitrary attributes.
-- The in-memory recent-event ring is capped at 64; process restart clears it.
-- Ingest requests are size-limited. The remote bind requires explicit opt-in and a bearer token.
-- Do not send identifiers in event fields or attach this receiver to an untrusted network. Transport privacy and viewer authorization for cloud are the operator's responsibility.
-- `UNKNOWN` is the honest fallback when an adapter cannot observe a category. The display does not infer memory access, planning, or activity from silence.
+- OTLP data is parsed in memory; only allowlisted operation categories, fixed source labels, counters, timestamps, and aggregate in-flight counts appear in the UI.
+- Span names, attributes (including model names), resource metadata, prompts, outputs, IDs, and tool details are not copied into the public state projection.
+- The recent-event ring is capped at 64; process restart clears it. Ingest request size is capped at 1 MiB.
+- Local loopback is the default. Remote bind requires explicit opt-in and a bearer token. Cloud transport privacy and viewer authentication remain the operator's responsibility.
 - No durability, analytics, multi-tenant separation, or external telemetry vendor is required.
 
-## Run locally
+## Endpoints
 
-```sh
-python3 server.py --host 127.0.0.1 --port 18896
-```
-
-Endpoints: `GET /`, `GET /state`, `GET /events`, `GET /healthz`, `POST /v1/event`, and `POST /v1/heartbeat`.
+`GET /`, `GET /state`, `GET /events`, `GET /healthz`, `POST /v1/traces` (OTLP/HTTP), `POST /v1/event` (optional fallback), and `POST /v1/heartbeat`.
 
 ## License
 

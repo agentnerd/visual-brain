@@ -1,4 +1,4 @@
-"""Tiny stdlib emitter. Pass only lifecycle category/action, never agent content."""
+"""Optional fallback emitter for runtimes without OpenTelemetry export/hooks."""
 import json
 import os
 import urllib.request

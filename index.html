@@ -16,10 +16,12 @@
     svg { display: block; width: 100%; height: auto; max-height: min(60vw, 460px); overflow: visible; }
     path { fill: #263533; stroke: #83938b; stroke-width: 1.5; stroke-dasharray: 3 4; transition: fill .25s, stroke .25s; }
     path.ACTIVE { fill: #b4d9b6; stroke: #e3ffe7; stroke-dasharray: none; animation: pulse 1.4s infinite; }
+    path.RECENT { fill: #617c60; stroke: #d4e6ae; stroke-dasharray: none; }
     path.INACTIVE { fill: #334d46; stroke-dasharray: none; }
     path.UNKNOWN { fill: #263533; }
     .brain-region { fill: #e9eee8; text-anchor: middle; pointer-events: none; }
     .brain-region.ACTIVE { fill: #203127; }
+    .brain-region.RECENT { fill: #f0efdc; }
     .brain-region.UNKNOWN { fill: #c2cdc7; }
     .region-name { font: 700 21px/1 system-ui, sans-serif; letter-spacing: .035em; }
     .region-state { font: 600 16px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.035em; }
@@ -77,7 +79,7 @@
     </svg>
   </div>
   <section class="event-panel"><b>Recent runtime events</b><div id="activity" aria-live="polite">Waiting for Gateway telemetry…</div></section>
-  <footer>ACTIVE = work currently in progress · INACTIVE = a previous event is now quiet · UNKNOWN = no coverage observed.<br>Each runtime adapter reports only the lifecycle events it can actually observe. Uninstrumented regions stay UNKNOWN.</footer>
+  <footer>ACTIVE = an in-flight operation was reported · RECENT = telemetry arrived recently, but does not prove work remains active · INACTIVE = observed before, now quiet · UNKNOWN = no coverage observed.<br>Each runtime reports only events it can actually observe. Uninstrumented regions stay UNKNOWN.</footer>
 </main>
 <script>
 const labels={model:'Model calls',tools:'Tool execution',memory:'Memory retrieval',skills:'Skill usage',planning:'Gateway message flow',agents:'Agent / harness lifecycle'};

@@ -1,4 +1,5 @@
-// Tiny dependency-free emitter. Never attach prompts, results, or runtime IDs.
+// Optional fallback emitter for runtimes without OpenTelemetry export/hooks.
+// Never attach prompts, results, or runtime IDs.
 const endpoint = (process.env.VISUAL_BRAIN_ENDPOINT || 'http://127.0.0.1:18896').replace(/\/$/, '');
 
 export async function emit(category, action, source) {
