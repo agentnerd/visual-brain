@@ -171,13 +171,16 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
                 if content_type not in ('application/json', 'application/x-protobuf', 'application/protobuf'):
                     return self.respond(415, {'error': 'OTLP/HTTP JSON or protobuf required'})
                 try:
+                    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+                    from google.protobuf.message import DecodeError
+                    from google.protobuf.json_format import Parse, ParseError
+                except ImportError:
+                    return self.respond(503, {'error': 'Install OTLP support: pip install -r requirements-otel.txt'})
+                try:
                     length = int(self.headers.get('Content-Length', '0'))
                     if not 0 < length <= 1_048_576:
                         raise ValueError('request size invalid')
                     body = self.rfile.read(length)
-                    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
-                    from google.protobuf.message import DecodeError
-                    from google.protobuf.json_format import Parse, ParseError
                     request = ExportTraceServiceRequest()
                     if content_type == 'application/json':
                         Parse(body.decode('utf-8'), request)
@@ -186,8 +189,6 @@ def serve(host='127.0.0.1', port=18896, token=None, allow_remote=False):
                     record_otlp_traces(request, brain)
                     response = self._otlp_response(content_type)
                     return self.respond(200, response, content_type)
-                except ImportError:
-                    return self.respond(503, {'error': 'Install OTLP support: pip install -r requirements-otel.txt'})
                 except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError, DecodeError, ParseError):
                     return self.respond(400, {'error': 'invalid OTLP trace payload'})
             if self.path == '/v1/heartbeat':
